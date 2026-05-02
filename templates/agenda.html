@@ -1,0 +1,323 @@
+{% extends "base.html" %}
+{% block title %}Agenda{% endblock %}
+{% block page_title %}Agenda{% endblock %}
+
+{% block extra_head %}
+<style>
+  .week-nav {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .week-nav .semana {
+    font-size: 14px;
+    font-weight: 500;
+    min-width: 200px;
+    text-align: center;
+  }
+  .day-tabs {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+  .day-tab {
+    padding: 8px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    cursor: pointer;
+    font-size: 13px;
+    text-decoration: none;
+    color: var(--text);
+    transition: background 0.15s;
+    text-align: center;
+    min-width: 70px;
+  }
+  .day-tab:hover { background: var(--bg); }
+  .day-tab.active {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent-d);
+    font-weight: 500;
+  }
+  .day-tab .dia-nombre { font-size: 11px; color: inherit; display: block; }
+  .day-tab .dia-num { font-size: 16px; font-weight: 600; }
+  .day-tab.active .dia-nombre { color: rgba(255,255,255,0.8); }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- Filtro profesional -->
+<div class="card" style="margin-bottom:16px;">
+  <form method="GET" action="{{ url_for('web.agenda') }}"
+        style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;">
+    <div class="form-group" style="margin:0; flex:1; min-width:180px;">
+      <label>Profesional</label>
+      <select name="prof_id" onchange="this.form.submit()">
+        <option value="">— Elegir —</option>
+        {% for p in profs %}
+          <option value="{{ p.id }}" {% if p.id == prof_id %}selected{% endif %}>
+            {{ p.last_name }}, {{ p.first_name }}{% if p.specialty %} — {{ p.specialty }}{% endif %}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <input type="hidden" name="fecha" value="{{ fecha }}">
+  </form>
+</div>
+
+{% if prof_sel %}
+
+<!-- Navegación semanal -->
+<div class="week-nav">
+  <a href="{{ url_for('web.agenda', prof_id=prof_id, fecha=semana_anterior) }}"
+     class="btn btn-sm">← Anterior</a>
+  <span class="semana">Semana del {{ semana_inicio }} al {{ semana_fin }}</span>
+  <a href="{{ url_for('web.agenda', prof_id=prof_id, fecha=semana_siguiente) }}"
+     class="btn btn-sm">Siguiente →</a>
+  <a href="{{ url_for('web.agenda', prof_id=prof_id, fecha=hoy) }}"
+     class="btn btn-sm">Hoy</a>
+</div>
+
+<!-- Tabs de días de la semana -->
+<div class="day-tabs">
+  {% for dia in dias_semana %}
+  <a href="{{ url_for('web.agenda', prof_id=prof_id, fecha=dia.fecha_str) }}"
+     class="day-tab {% if dia.fecha_str == fecha %}active{% endif %}">
+    <span class="dia-nombre">{{ dia.nombre }}</span>
+    <span class="dia-num">{{ dia.numero }}</span>
+  </a>
+  {% endfor %}
+</div>
+
+<!-- Contenido del día seleccionado -->
+<div class="grid-2" style="align-items:start;">
+
+  <!-- Turnos del día -->
+  <div class="card">
+    <div class="card-title">
+      {{ prof_sel.last_name }}, {{ prof_sel.first_name }}
+      {% if prof_sel.specialty %} — {{ prof_sel.specialty }}{% endif %}
+      — {{ fecha }}
+    </div>
+    {% if turnos %}
+      <table>
+        <thead>
+          <tr>
+            <th>Hora</th>
+            <th>Paciente</th>
+            <th>DNI</th>
+            <th>Obra social</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in turnos %}
+          <tr>
+            <td style="font-weight:500;">{{ t.time.strftime('%H:%M') }}</td>
+            <td>{{ t.patient_name }}</td>
+            <td style="color:#6b6a64;">{{ t.dni or '—' }}</td>
+            <td style="color:#6b6a64;">{{ t.obra_social or '—' }}</td>
+            <td>
+              <form method="POST" action="{{ url_for('web.cancelar_turno_web') }}"
+                    onsubmit="return confirm('¿Cancelar este turno?')">
+                <input type="hidden" name="prof_id" value="{{ prof_id }}">
+                <input type="hidden" name="fecha"   value="{{ fecha }}">
+                <input type="hidden" name="hora"    value="{{ t.time.strftime('%H:%M') }}">
+                <button type="submit" class="btn btn-sm btn-danger">Cancelar</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="empty">Sin turnos para esta fecha.</div>
+    {% endif %}
+  </div>
+
+  <!-- Panel derecho -->
+  <div style="display:flex; flex-direction:column; gap:16px;">
+
+    <!-- Nuevo turno -->
+    <div class="card">
+      <div class="card-title">Nuevo turno — {{ fecha }}</div>
+      <form method="POST" action="{{ url_for('web.nuevo_turno') }}" id="form-nuevo-turno">
+        <input type="hidden" name="prof_id"    value="{{ prof_id }}">
+        <input type="hidden" name="fecha"      value="{{ fecha }}">
+        <input type="hidden" name="patient_id" id="patient_id_hidden" value="">
+
+        <div class="form-group">
+          <label>Horario</label>
+          {% if horarios %}
+            <select name="hora">
+              {% for h in horarios %}
+                <option value="{{ h }}">{{ h }}</option>
+              {% endfor %}
+            </select>
+          {% else %}
+            <div style="font-size:13px; color:#6b6a64; padding:6px 0;">
+              Sin horarios disponibles.
+            </div>
+          {% endif %}
+        </div>
+
+        <div class="form-group">
+          <label>Buscar paciente (DNI o apellido)</label>
+          <div style="display:flex; gap:8px;">
+            <input type="text" id="buscar-paciente" placeholder="Ej: 28456789 o García"
+                   style="flex:1;" autocomplete="off">
+            <button type="button" class="btn btn-sm" onclick="buscarPaciente()">Buscar</button>
+          </div>
+          <div id="resultado-paciente" style="margin-top:8px; font-size:13px;
+               padding:8px 10px; border-radius:6px; display:none;"></div>
+        </div>
+
+        <div id="form-alta-paciente" style="display:none; margin-top:8px; padding:12px;
+             background:#f8f7f4; border-radius:6px; border:1px solid #e2e0d8;">
+          <div style="font-size:12px; font-weight:500; color:#633806; margin-bottom:10px;">
+            Paciente no encontrado — completá los datos
+          </div>
+          <div class="form-group">
+            <label>Nombre y apellido *</label>
+            <input type="text" id="alta-nombre" placeholder="García Juan">
+          </div>
+          <div class="form-group">
+            <label>DNI *</label>
+            <input type="text" id="alta-dni" placeholder="28456789">
+          </div>
+          <div class="form-group">
+            <label>Obra social</label>
+            <input type="text" id="alta-obra" placeholder="PAMI, OSDE... o dejá vacío">
+          </div>
+          <button type="button" class="btn btn-sm btn-primary" onclick="altaPaciente()">
+            Registrar paciente
+          </button>
+        </div>
+
+        {% if horarios %}
+          <div style="margin-top:12px;">
+            <button type="submit" class="btn btn-primary" id="btn-crear-turno"
+                    disabled style="opacity:0.5;">Crear turno</button>
+            <span id="paciente-seleccionado"
+                  style="font-size:12px; color:#6b6a64; margin-left:8px;"></span>
+          </div>
+        {% endif %}
+      </form>
+    </div>
+
+    <!-- Bloquear agenda -->
+    <div class="card">
+      <div class="card-title">Bloquear agenda — {{ fecha }}</div>
+      <form method="POST" action="{{ url_for('web.nuevo_bloqueo') }}">
+        <input type="hidden" name="prof_id" value="{{ prof_id }}">
+        <input type="hidden" name="fecha"   value="{{ fecha }}">
+        <div class="form-group">
+          <label>Horario</label>
+          {% if horarios %}
+            <select name="hora">
+              {% for h in horarios %}
+                <option value="{{ h }}">{{ h }}</option>
+              {% endfor %}
+            </select>
+          {% else %}
+            <div style="font-size:13px; color:#6b6a64; padding:6px 0;">Sin horarios.</div>
+          {% endif %}
+        </div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          {% if horarios %}<button type="submit" class="btn">Bloquear hora</button>{% endif %}
+          <button type="submit" name="todos" value="1" class="btn btn-danger">
+            Bloquear día completo
+          </button>
+        </div>
+      </form>
+    </div>
+
+  </div>
+</div>
+
+{% else %}
+  <div class="card">
+    <div class="empty">Seleccioná un profesional para ver la agenda.</div>
+  </div>
+{% endif %}
+
+<script>
+async function buscarPaciente() {
+  const q   = document.getElementById('buscar-paciente').value.trim();
+  if (!q) return;
+  const res  = await fetch(`/admin/api/paciente?q=${encodeURIComponent(q)}`);
+  const data = await res.json();
+  const div  = document.getElementById('resultado-paciente');
+  const alta = document.getElementById('form-alta-paciente');
+
+  if (data.found) {
+    document.getElementById('patient_id_hidden').value = data.id;
+    div.style.display = 'block';
+    div.style.background = '#e1f5ee';
+    div.style.color = '#085041';
+    div.style.border = '1px solid #9fe1cb';
+    div.textContent = `✅ ${data.name} — DNI: ${data.dni} — ${data.obra_social || 'sin obra social'}`;
+    alta.style.display = 'none';
+    habilitarBoton();
+  } else {
+    document.getElementById('patient_id_hidden').value = '';
+    div.style.display = 'block';
+    div.style.background = '#faeeda';
+    div.style.color = '#633806';
+    div.style.border = '1px solid #fac775';
+    div.textContent = '⚠️ No encontrado. Completá los datos para registrarlo.';
+    if (/^\d+$/.test(q)) document.getElementById('alta-dni').value = q;
+    else document.getElementById('alta-nombre').value = q;
+    alta.style.display = 'block';
+    deshabilitarBoton();
+  }
+}
+
+async function altaPaciente() {
+  const nombre = document.getElementById('alta-nombre').value.trim();
+  const dni    = document.getElementById('alta-dni').value.trim().replace(/\./g, '');
+  const obra   = document.getElementById('alta-obra').value.trim();
+  if (!nombre || !dni) { alert('Nombre y DNI son obligatorios.'); return; }
+  const res  = await fetch('/admin/api/paciente/alta', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ nombre, dni, obra_social: obra || null })
+  });
+  const data = await res.json();
+  if (data.ok) {
+    document.getElementById('patient_id_hidden').value = data.id;
+    const div = document.getElementById('resultado-paciente');
+    div.style.display = 'block';
+    div.style.background = '#e1f5ee';
+    div.style.color = '#085041';
+    div.style.border = '1px solid #9fe1cb';
+    div.textContent = `✅ ${data.name} registrado — DNI: ${data.dni}`;
+    document.getElementById('form-alta-paciente').style.display = 'none';
+    habilitarBoton();
+  } else { alert('Error: ' + (data.error || 'No se pudo registrar.')); }
+}
+
+function habilitarBoton() {
+  const btn = document.getElementById('btn-crear-turno');
+  if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+  document.getElementById('paciente-seleccionado').textContent = 'Paciente listo ✅';
+}
+function deshabilitarBoton() {
+  const btn = document.getElementById('btn-crear-turno');
+  if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; }
+  document.getElementById('paciente-seleccionado').textContent = '';
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  const input = document.getElementById('buscar-paciente');
+  if (input) input.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); buscarPaciente(); }
+  });
+});
+</script>
+
+{% endblock %}
